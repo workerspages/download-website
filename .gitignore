@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+downloaded_site/
+downloaded_site*/
+env_test/
+cookie_test/
+example_download/
+.venv/
+.idea/
+.vscode/
+*.log
