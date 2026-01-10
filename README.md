@@ -75,7 +75,7 @@ docker run -v $(pwd)/downloaded_site:/app/downloaded_site -e SITE_URL="https://e
 
 ### 4. Docker Compose 使用
 
-使用 Docker Compose 可以更方便地管理配置。
+使用 Docker Compose 可以更方便地管理配置，默认使用 `ghcr.io` 的预构建镜像。
 
 1.  修改 `docker-compose.yml` 中的 `SITE_URL` 和其他环境变量。
 2.  运行命令：

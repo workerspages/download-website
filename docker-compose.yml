@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   downloader:
-    build: .
+    image: ghcr.io/workerspages/download-website:latest
     volumes:
       - ./downloaded_site:/app/downloaded_site
     environment:
