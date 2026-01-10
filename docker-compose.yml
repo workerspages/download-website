@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  downloader:
+    build: .
+    volumes:
+      - ./downloaded_site:/app/downloaded_site
+    environment:
+      # 目标 URL (必填，请替换)
+      - SITE_URL=https://example.com
+      # 输出目录 (默认即可)
+      - OUTPUT_DIR=/app/downloaded_site
+      # 递归深度 (默认 1)
+      - MAX_DEPTH=1
+      # Cookie 字符串 (可选)
+      # - COOKIES=key=value; key2=value2

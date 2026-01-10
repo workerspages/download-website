@@ -73,7 +73,18 @@ docker run -v $(pwd)/downloaded_site:/app/downloaded_site -e SITE_URL="https://e
 docker run -v $(pwd)/downloaded_site:/app/downloaded_site -e SITE_URL="https://example.com" website-downloader
 ```
 
-### 4. GitHub Actions (CI/CD)
+### 4. Docker Compose 使用
+
+使用 Docker Compose 可以更方便地管理配置。
+
+1.  修改 `docker-compose.yml` 中的 `SITE_URL` 和其他环境变量。
+2.  运行命令：
+
+```bash
+docker-compose up
+```
+
+### 5. GitHub Actions (CI/CD)
 
 本项目配置了 GitHub Actions 自动构建并推送镜像到 **Docker Hub** 和 **GitHub Container Registry (GHCR)**。
 
