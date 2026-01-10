@@ -219,7 +219,9 @@ class WebsiteDownloader:
         """计算两个URL对应本地文件的相对路径"""
         base_path = self.get_local_path(base_url)
         target_path = self.get_local_path(target_url)
-        return os.path.relpath(target_path, os.path.dirname(base_path))
+        rel_path = os.path.relpath(target_path, os.path.dirname(base_path))
+        # 确保URL使用正斜杠
+        return rel_path.replace('\\', '/')
 
     def run(self):
         self.process_page(self.start_url, 0)
