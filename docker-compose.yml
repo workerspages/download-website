@@ -1,8 +1,9 @@
 version: '3.8'
 
 services:
-  downloader:
+  download-website:
     image: ghcr.io/workerspages/download-website:latest
+    container_name: download-website
     volumes:
       - ./downloaded_site:/app/downloaded_site
     environment:
