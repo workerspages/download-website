@@ -78,53 +78,32 @@ class WebsiteDownloader:
         return parsed_url.netloc == parsed_start.netloc
 
     def get_local_path(self, url):
-        """将URL转换为本地文件路径"""
-        parsed_url = urlparse(url)
-        path = parsed_url.path
-        if not path or path.endswith('/'):
-            path += 'index.html'
-        
-        # 移除开头的 /
-        if path.startswith('/'):
-            path = path[1:]
+        """将URL转换为本地文件路径，包含域名以避免冲突"""
+        try:
+            parsed_url = urlparse(url)
+            # 使用域名作为第一级目录
+            domain = parsed_url.netloc
+            path = parsed_url.path
             
-        return os.path.join(self.output_dir, path)
+            if not path or path.endswith('/'):
+                path += 'index.html'
+            
+            # 移除开头的 /
+            if path.startswith('/'):
+                path = path[1:]
+                
+            # Windows文件系统对某些字符有限制，简单处理
+            domain = domain.replace(':', '_')
+            
+            return os.path.join(self.output_dir, domain, path)
+        except Exception as e:
+            logger.error(f"Error calculating local path for {url}: {e}")
+            # Fallback
+            return os.path.join(self.output_dir, "unknown_domain", "error.html")
 
     def download_asset(self, url):
-        """下载静态资源"""
-        try:
-            if not url:
-                return None
-                
-            # 处理相对路径
-            full_url = urljoin(self.start_url, url)
-            
-            # 简单的文件类型检查，避免下载无关内容
-            if full_url.startswith('data:'):
-                return url
-
-            local_path = self.get_local_path(full_url)
-            
-            if os.path.exists(local_path):
-                return os.path.relpath(local_path, self.output_dir) # 简化逻辑，暂返回相对路径，后续可能需要针对引用页面的相对路径
-            
-            # 确保目录存在
-            os.makedirs(os.path.dirname(local_path), exist_ok=True)
-            
-            logger.info(f"Downloading asset: {full_url}")
-            response = self.session.get(full_url, stream=True)
-            response.raise_for_status()
-            
-            with open(local_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            
-            return full_url # 返回完整URL用于后续替换，或者直接返回相对路径？
-                            # 这里更好的做法是：返回相对于当前HTML文件的路径。
-                            # 为了简化，初步版本先下载，替换逻辑在 parse_and_save 中处理。
-        except Exception as e:
-            logger.error(f"Failed to download asset {url}: {e}")
-            return url
+        """下载静态资源 (Legacy/Redirect to download_to_local)"""
+        return self.download_to_local(url)
 
     def process_page(self, url, current_depth):
         if current_depth > self.max_depth:
@@ -137,35 +116,43 @@ class WebsiteDownloader:
         logger.info(f"Processing page: {url} (Depth: {current_depth})")
         
         try:
+            # 确保主页面也能正确下载
+            local_path = self.get_local_path(url)
+            
             response = self.session.get(url)
             response.raise_for_status()
             
             soup = BeautifulSoup(response.text, 'html.parser')
             
+            # Helper to handle asset processing
+            def process_asset_link(tag, attr):
+                asset_url = tag.get(attr)
+                if not asset_url:
+                    return
+                
+                full_asset_url = urljoin(url, asset_url)
+                
+                # Try to download
+                if self.download_to_local(full_asset_url):
+                    # Only rewrite if download successful (or file exists)
+                    tag[attr] = self.get_relative_path(url, full_asset_url)
+                else:
+                    # Keep absolute URL if download fails so it might load from web
+                    tag[attr] = full_asset_url
+
             # 1. 处理 CSS (link)
             for link in soup.find_all('link', href=True):
-                asset_url = link['href']
-                full_asset_url = urljoin(url, asset_url)
-                self.download_to_local(full_asset_url)
-                # 重新链接
-                link['href'] = self.get_relative_path(url, full_asset_url)
+                process_asset_link(link, 'href')
 
             # 2. 处理 JS (script)
             for script in soup.find_all('script', src=True):
-                asset_url = script['src']
-                full_asset_url = urljoin(url, asset_url)
-                self.download_to_local(full_asset_url)
-                script['src'] = self.get_relative_path(url, full_asset_url)
+                process_asset_link(script, 'src')
 
             # 3. 处理 图片 (img)
             for img in soup.find_all('img', src=True):
-                asset_url = img['src']
-                full_asset_url = urljoin(url, asset_url)
-                self.download_to_local(full_asset_url)
-                img['src'] = self.get_relative_path(url, full_asset_url)
+                process_asset_link(img, 'src')
 
             # 保存修改后的HTML
-            local_path = self.get_local_path(url)
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
             with open(local_path, 'w', encoding='utf-8') as f:
                 f.write(soup.prettify())
@@ -178,41 +165,55 @@ class WebsiteDownloader:
                     next_url = next_url.split('#')[0]
                     
                     if self.is_valid_url(next_url):
-                        # 修改链接指向本地文件
+                        # 对于页面链接，我们先计算相对路径
                         a['href'] = self.get_relative_path(url, next_url)
                         self.process_page(next_url, current_depth + 1)
-                    # 如果是外部链接，保持不变
 
         except Exception as e:
             logger.error(f"Failed to process {url}: {e}")
 
     def download_to_local(self, url):
-        """辅助方法：下载任意文件到本地对应的路径"""
+        """
+        辅助方法：下载任意文件到本地对应的路径
+        Returns:
+            bool: True if file exists or downloaded successfully, False otherwise
+        """
         try:
             if not url:
-                return
+                return False
             
             # 跳过非HTTP/HTTPS链接和Data URI
             if url.startswith('data:') or not url.startswith(('http://', 'https://')):
-                return
+                return False
 
             local_path = self.get_local_path(url)
+            
             if os.path.exists(local_path):
-                return
+                return True
             
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
             
             logger.info(f"Downloading file: {url}")
-            response = self.session.get(url, stream=True, timeout=10)
-            if response.status_code == 200:
-                with open(local_path, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        f.write(chunk)
-            else:
-                logger.warning(f"Status {response.status_code} for {url}")
+            try:
+                response = self.session.get(url, stream=True, timeout=10)
+                if response.status_code == 200:
+                    with open(local_path, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                    return True
+                else:
+                    logger.warning(f"Status {response.status_code} for {url}")
+                    return False
+            except Exception as download_error:
+                logger.warning(f"Download failed for {url}: {download_error}")
+                # Clean up if partial file created?
+                if os.path.exists(local_path) and os.path.getsize(local_path) == 0:
+                     os.remove(local_path)
+                return False
                 
         except Exception as e:
-            logger.error(f"Error downloading {url}: {e}")
+            logger.error(f"Error in download_to_local {url}: {e}")
+            return False
 
     def get_relative_path(self, base_url, target_url):
         """计算两个URL对应本地文件的相对路径"""
