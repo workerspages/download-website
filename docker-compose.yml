@@ -4,6 +4,7 @@ services:
   download-website:
     image: ghcr.io/workerspages/download-website:latest
     container_name: download-website
+    shm_size: '2gb'
     volumes:
       - ./downloaded_site:/app/downloaded_site
     environment:

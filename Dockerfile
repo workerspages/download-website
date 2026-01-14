@@ -1,4 +1,4 @@
-FROM python:3.9-slim
+FROM mcr.microsoft.com/playwright/python:v1.49.0-jammy
 
 WORKDIR /app
 
@@ -6,5 +6,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY download_site.py .
+COPY download_site_playwright.py .
 
-CMD ["python", "download_site.py"]
+CMD ["python", "download_site_playwright.py"]
