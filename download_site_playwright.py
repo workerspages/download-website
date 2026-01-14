@@ -36,7 +36,10 @@ class PlaywrightDownloader:
         self.base_url = f"{parsed.scheme}://{parsed.netloc}"
 
     def get_local_path(self, url):
-        """将 URL 转换为本地文件路径"""
+        """将 URL 转换为本地文件路径
+        
+        主站资源保持原路径，外部资源放到 _external/{domain}/ 目录
+        """
         try:
             parsed = urlparse(url)
             domain = parsed.netloc.replace(':', '_')
@@ -60,10 +63,16 @@ class PlaywrightDownloader:
                 else:
                     path = f"{path}_{safe_query}"
             
-            return os.path.join(self.output_dir, domain, path)
+            # 判断是否为主站资源
+            if domain == self.base_domain.replace(':', '_'):
+                # 主站资源：直接使用路径
+                return os.path.join(self.output_dir, path)
+            else:
+                # 外部资源：放到 _external/{domain}/ 目录
+                return os.path.join(self.output_dir, "_external", domain, path)
         except Exception as e:
             logger.error(f"Error calculating local path for {url}: {e}")
-            return os.path.join(self.output_dir, "unknown", "error.html")
+            return os.path.join(self.output_dir, "_external", "unknown", "error.html")
 
     def save_resource(self, response):
         """保存网络响应到本地文件"""
