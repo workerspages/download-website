@@ -131,37 +131,84 @@ class PlaywrightDownloader:
         
         def get_relative_path(asset_url):
             """计算资源相对于页面的路径"""
+            if not asset_url or asset_url.startswith(('data:', 'javascript:', 'blob:', '#')):
+                return None
             full_url = urljoin(page_url, asset_url)
+            # 只处理已下载的资源
+            if full_url not in self.downloaded_resources:
+                return None
             asset_local_path = self.get_local_path(full_url)
             rel_path = os.path.relpath(asset_local_path, page_dir)
             return rel_path.replace('\\', '/')
         
-        # 处理 link 标签 (CSS)
+        # 处理 link 标签 (CSS, favicon 等)
         for link in soup.find_all('link', href=True):
-            href = link['href']
-            if href.startswith('data:') or href.startswith('javascript:'):
-                continue
-            full_url = urljoin(page_url, href)
-            if full_url in self.downloaded_resources:
-                link['href'] = get_relative_path(href)
+            new_path = get_relative_path(link['href'])
+            if new_path:
+                link['href'] = new_path
         
         # 处理 script 标签 (JS)
         for script in soup.find_all('script', src=True):
-            src = script['src']
-            if src.startswith('data:') or src.startswith('javascript:'):
-                continue
-            full_url = urljoin(page_url, src)
-            if full_url in self.downloaded_resources:
-                script['src'] = get_relative_path(src)
+            new_path = get_relative_path(script['src'])
+            if new_path:
+                script['src'] = new_path
         
         # 处理 img 标签
         for img in soup.find_all('img', src=True):
-            src = img['src']
-            if src.startswith('data:'):
-                continue
-            full_url = urljoin(page_url, src)
-            if full_url in self.downloaded_resources:
-                img['src'] = get_relative_path(src)
+            new_path = get_relative_path(img['src'])
+            if new_path:
+                img['src'] = new_path
+        
+        # 处理 img srcset 属性
+        for img in soup.find_all('img', srcset=True):
+            srcset = img['srcset']
+            new_srcset_parts = []
+            for part in srcset.split(','):
+                part = part.strip()
+                if ' ' in part:
+                    url, descriptor = part.rsplit(' ', 1)
+                    new_path = get_relative_path(url.strip())
+                    if new_path:
+                        new_srcset_parts.append(f"{new_path} {descriptor}")
+                    else:
+                        new_srcset_parts.append(part)
+                else:
+                    new_path = get_relative_path(part)
+                    if new_path:
+                        new_srcset_parts.append(new_path)
+                    else:
+                        new_srcset_parts.append(part)
+            img['srcset'] = ', '.join(new_srcset_parts)
+        
+        # 处理 video/audio source 标签
+        for source in soup.find_all('source', src=True):
+            new_path = get_relative_path(source['src'])
+            if new_path:
+                source['src'] = new_path
+        
+        # 处理 video/audio 标签
+        for media in soup.find_all(['video', 'audio'], src=True):
+            new_path = get_relative_path(media['src'])
+            if new_path:
+                media['src'] = new_path
+        
+        # 处理 picture source 标签的 srcset
+        for source in soup.find_all('source', srcset=True):
+            new_path = get_relative_path(source['srcset'])
+            if new_path:
+                source['srcset'] = new_path
+        
+        # 处理内联样式中的 url()
+        for tag in soup.find_all(style=True):
+            style = tag['style']
+            import re
+            def replace_url(match):
+                url = match.group(1).strip('\'"')
+                new_path = get_relative_path(url)
+                if new_path:
+                    return f"url('{new_path}')"
+                return match.group(0)
+            tag['style'] = re.sub(r'url\(([^)]+)\)', replace_url, style)
         
         return soup.prettify()
 
